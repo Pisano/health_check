@@ -59,6 +59,8 @@ module HealthCheck
             errors << HealthCheck::ResqueHealthCheck.check
           when 'sidekiq-redis'
             errors << HealthCheck::SidekiqHealthCheck.check
+          when 'sidekiq-queue'
+            errors << HealthCheck::SidekiqQueueHealthCheck.check
           when 'redis'
             errors << HealthCheck::RedisHealthCheck.check
           when 's3'
