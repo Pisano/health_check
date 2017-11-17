@@ -76,7 +76,7 @@ To change the configuration of health_check, create a file `config/initializers/
 
     HealthCheck.setup do |config|
 
-      # uri prefix
+      # uri prefix (no leading slash)
       config.uri = 'health_check'
 
       # Text output upon success
@@ -114,6 +114,13 @@ To change the configuration of health_check, create a file `config/initializers/
         CustomHealthCheck.perform_check # any code that returns blank on success and non blank string upon failure
       end
 
+      # Add another custom check with a name, so you can call just specific custom checks. This can also be run using
+      # the standard 'custom' check.
+      # You can define multiple tests under the same name - they will be run one after the other.
+      config.add_custom_check('sometest') do
+        CustomHealthCheck.perform_another_check # any code that returns blank on success and non blank string upon failure
+      end
+
       # max-age of response in seconds
       # cache-control is public when max_age > 1 and basic_auth_username is not set
       # You can force private without authentication for longer max_age by
@@ -124,6 +131,16 @@ To change the configuration of health_check, create a file `config/initializers/
       # These default to nil and the endpoint is not protected
       config.basic_auth_username = 'my_username'
       config.basic_auth_password = 'my_password'
+
+      # Whitelist requesting IPs
+      # Defaults to blank and allows any IP
+      config.origin_ip_whitelist = %w(123.123.123.123)
+
+      # http status code used when the ip is not allowed for the request
+      config.http_status_for_ip_whitelist_error = 403
+
+      # When redis url is non-standard
+      config.redis_url = 'redis_url'
     end
 
 You may call add_custom_check multiple times with different tests. These tests will be included in the default list ("standard").
@@ -133,15 +150,21 @@ If you have a catchall route then add the following line above the catch all rou
 
 === Installing As Middleware
 
-Install health_check as middleware if you want to ignore exceptions from later parts of the Rails middleware stack,
-eg DB connection errors from QueryCache. Include "middleware" in the list of checks to have the checks processed by the middleware
-health check rather than the full stack check. The "middleware" check will fail if you have not installed health_check as middleware.
+Install health_check as middleware if you want to sometimes ignore exceptions from later parts of the Rails middleware stack,
+eg DB connection errors from QueryCache. The "middleware" check will fail if you have not installed health_check as middleware.
 
 To install health_check as middleware add the following line to the config/application.rb:
     config.middleware.insert_after "Rails::Rack::Logger", HealthCheck::MiddlewareHealthcheck
 
 Note: health_check is installed as a full rails engine even if it has been installed as middleware. This is so the
-standard checks continue to test the complete rails stack.
+remaining checks continue to run through the complete rails stack.
+
+You can also adjust what checks are run from middleware, eg if you want to exclude the checking of the database etc, then set
+  config.middleware_checks = ['middleware', 'standard', 'custom']
+  config.standard_checks = ['middleware', 'custom']
+
+Middleware checks are run first, and then full stack checks.
+When installed as middleware, exceptions thrown when running the full stack tests are formatted in the standard way.
 
 == Uptime Monitoring
 
@@ -200,7 +223,7 @@ It is recomended that you use silencer, lograge or one of the other log filterin
 
 For example, with lograge use the following to exclude health_check from being logged:
 
-    config.lograge.ignore_actions = ["health_check/health_check#index"]
+    config.lograge.ignore_actions = ["HealthCheck::HealthCheckController#index"]
 
 Likewise you will probably want to exclude health_check from monitoring systems like newrelic.
 
@@ -244,28 +267,41 @@ Last-modified is set to the current time (rounded down to a multiple of max_age 
 
 === Manual testing
 
-The test will package up and install the gem under a temporary path, create a dummy rails app configured for sqlite,
-install the gem, and then run up tests against the server.
-This will require TCP port 3456 to be free.
+The instructions have been changed to using a vagrant virtual box for consistant results.
 
-Using rbenv or rvm, install and set the version of ruby you wish to test against.
-You will need to install the bundler gem if using rbenv.
-See the <tt>.travis.yml</tt> file for the list of ruby versions that we test against.
-
-* rbenv command: <tt>rbenv shell 1.8.7-p371</tt>
-* rvm command: <tt>rvm use 1.9.3</tt>
+Install vagrant 1.9.7 or later and virtual_box or other local virtual machine providor.
 
 Create a temp directory for throw away testing, and clone the health_check gem into it
 
     mkdir -p ~/tmp
     cd ~/tmp
-    git clone https://github.com/ianheggie/health_check.git
+    git clone https://github.com/ianheggie/health_check.git ~/tmp/health_check
+
+The Vagrantfile includes provisioning rules to install chruby (ruby version control),
+ruby-build will also be installed and run to build various rubies under /opt/rubies.
+
+Use <tt>vagrant ssh</tt> to connect to the virtual box and run tests.
+
+The test script will package up and install the gem under a temporary path, create a dummy rails app configured for sqlite,
+install the gem, and then run up tests against the server.
+This will require TCP port 3456 to be free.
 
 Cd to the checked out health_check directory and then run the test as follows:
 
     cd ~/tmp/health_check
 
+    vagrant up   # this will also run vagrant provision and take some time
+                 # chruby and various ruby versions will be installed
+
+    vagrant ssh
+
+    cd /vagrant  # the current directory on your host is mounted here on the virtual machine
+
+    chruby 2.2.2 # or some other ruby version 
+
     test/test_with_railsapp
+
+    exit        # from viretual machine when finished
 
 The script will first call `test/setup_railsapp` to setup a rails app with health_check installed and then
 run up the rails server and perform veraious tests.
@@ -277,7 +313,7 @@ The command `rake test` will also launch these tests, except it cannot install t
 
 == Copyright
 
-Copyright (c) 2010-2014 Ian Heggie, released under the MIT license.
+Copyright (c) 2010-2017 Ian Heggie, released under the MIT license.
 See MIT-LICENSE for details.
 
 == Contributors
